@@ -66,7 +66,10 @@ function vector.new(x, y, z)
 	return setmetatable(self, meta)
 end
 
-function vector:calculate()
+function vector:calculate(x, y, z)
+	self[1] = tonumber(x) or self[1]
+	self[2] = tonumber(y) or self[2]
+	self[3] = tonumber(z) or self[3]
 	self.magnitude = math.sqrt(self[1] * self[1] + self[2] * self[2] + self[3] * self[3])
 	if (self.magnitude > 0) then
 		self.unit[1] = self[1] / self.magnitude
