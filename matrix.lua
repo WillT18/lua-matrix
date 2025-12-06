@@ -1,20 +1,35 @@
 local matrix = {}
 
+----------------------------------------------------------------
+--- Vector functions -------------------------------------------
+----------------------------------------------------------------
+
+-- Vector magnitude
 local function magnitude(x, y, z)
 	return math.sqrt(x*x + y*y + z*z)
 end
 
+-- Normalized vector, scaled by s
+-- 4th return value is the magnitude of the input
 local function normal(x, y, z, s)
 	local l = math.sqrt(x*x + y*y + z*z)
 	return s*x/l, s*y/l, s*z/l, l
 end
 
+-- Cross product, with magnitude of s
+-- 4th return value is the original magnitude of the cross product before scaling
 local function cross(x, y, z, a, b, c, s)
 	local d, e, f = y*c - z*b, z*a - x*c, x*b - y*a
 	local l = math.sqrt(d*d + e*e + f*f)
 	return s*d/l, s*e/l, s*f/l, l
 end
 
+-- Dot product
+local function dot(x, y, z, a, b, c)
+	return x*a, y*b, z*c
+end
+
+-- Stand-in for table.unpack, which does not exist in 5.1
 local function m_unpack(t)
 	return
 		t[1], t[2], t[3], t[4],
@@ -23,6 +38,7 @@ local function m_unpack(t)
 		t[13],t[14],t[15],t[16]
 end
 
+-- Metatable with index pointing to matrix table
 local meta = {
 	__metatable = "fast_mutable_matrix",
 	__index = matrix,
@@ -32,6 +48,7 @@ local meta = {
 	end
 }
 
+-- Constructor, produces an identity matrix with default rotation and position at origin
 function matrix.new()
 	return setmetatable({
 		1, 0, 0, 0,
@@ -41,10 +58,19 @@ function matrix.new()
 	}, meta)
 end
 
+----------------------------------------------------------------
+--- Getter methods ---------------------------------------------
+----------------------------------------------------------------
+--- All return vectors                                       ---
+----------------------------------------------------------------
+
+-- Return the fourth column vector, which are the position components, as a tuple
 function matrix:getPosition()
 	return self[4], self[8], self[12]
 end
 
+-- Return the magnitudes of the column vectors of the rotation matrix
+-- Does not account for cases where a dimension has negative scale
 function matrix:getScale()
 	return
 		magnitude(self[1], self[5], self[9]),
@@ -52,18 +78,48 @@ function matrix:getScale()
 		magnitude(self[3], self[7], self[11])
 end
 
+-- Return the first column vector as a tuple
+-- The fourth value returned is also the X scale
+-- Negative since the x vector is technically the "back" vector
 function matrix:getForward()
 	return normal(-self[1], -self[5], -self[9], 1)
 end
 
+-- Return the second column vector as a tuple
+-- The fourth value returned is also the Y scale
 function matrix:getRight()
 	return normal(self[2], self[6], self[10], 1)
 end
 
+-- Return the third column vector as a tuple
+-- The fourth value returned is also the Z scale
 function matrix:getUp()
 	return normal(self[3], self[7], self[11], 1)
 end
 
+-- Return the Euler angle rotation
+function matrix:getRotation()
+	local p = math.asin(-self[9] / magnitude(self[1], self[5], self[9]))
+	local r, y
+	if ((math.abs(p) - math.pi/2) == 0) then
+		r = math.atan2(-self[2], self[6])
+		y = 0
+	else
+		r = math.atan2(self[10], self[11])
+		y = math.atan2(self[5], self[1])
+	end
+	return r, p, y
+end
+
+----------------------------------------------------------------
+--- 'Builder' methods ------------------------------------------
+----------------------------------------------------------------
+--- All of these return the object calling them, so that     ---
+--- methods can be chained together to assign properties to  ---
+--- a matrix in a single line                                ---
+----------------------------------------------------------------
+
+-- Sets the components back to those of the identity matrix
 function matrix:reset()
 	self[1], self[2], self[3], self[4] = 1, 0, 0, 0
 	self[5], self[6], self[7], self[8] = 0, 1, 0, 0
@@ -72,11 +128,13 @@ function matrix:reset()
 	return self
 end
 
+-- Sets the position components
 function matrix:position(x, y, z)
 	self[4], self[8], self[12] = x, y, z
 	return self
 end
 
+-- Sets the scale of the rotation matrix, while preserving the rotation
 function matrix:scale(x, y, z)
 	self[1], self[5], self[9] = normal(self[1], self[5], self[9], x)
 	self[2], self[6], self[10]= normal(self[2], self[6], self[10],y)
@@ -84,6 +142,7 @@ function matrix:scale(x, y, z)
 	return self
 end
 
+-- Sets the Euler angles in order of yaw (Z) - pitch (Y) - roll (X)
 function matrix:rotation(r, p, y)
 	local scale_x = magnitude(self[1], self[5], self[9])
 	local scale_y = magnitude(self[2], self[6], self[10])
@@ -96,6 +155,8 @@ function matrix:rotation(r, p, y)
 	return self
 end
 
+-- Orients the matrix's rotation to face x,y,z, with an optional up direction of sx,sy,sz
+-- Also attempts to handle cases where the target is parallel to the up direction
 function matrix:target(x, y, z, sx, sy, sz)
 	local scale_x = magnitude(self[1], self[5], self[9])
 	local scale_y = magnitude(self[2], self[6], self[10])
@@ -121,6 +182,8 @@ function matrix:target(x, y, z, sx, sy, sz)
 	return self
 end
 
+-- If called with another matrix, performs a matrix multiplication
+-- If called with 3 or 4 numbers, performs a vector multiplication
 function matrix:multiply(x, y, z, w)
 	if (getmetatable(x) == "fast_mutable_matrix") then
 		local a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44 = m_unpack(self)
@@ -156,6 +219,8 @@ function matrix:multiply(x, y, z, w)
 	end
 end
 
+-- Inverts the matrix, useful for object-space calculations
+-- Doing this, however, resets the scale of the rotation matrix
 function matrix:invert()
 	local a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44 = m_unpack(self)
 	-- normalize rotation
@@ -192,6 +257,8 @@ function matrix:invert()
 	return self
 end
 
+-- Get the determinant of this matrix
+-- The matrix cannot be inverted if the determinant is zero
 function matrix:determinant()
 	local a11, a12, a13, a14, a21, a22, a23, a24, a31, a32, a33, a34, a41, a42, a43, a44 = m_unpack(self)
 	return
@@ -205,6 +272,8 @@ function matrix:determinant()
 				-a23*a32*a41 - a21*a33*a42 - a22*a31*a43)
 end
 
+-- Copy this matrix's components to 'other'
+-- Returns the matrix being copied to
 function matrix:copyTo(other)
 	for i = 1, 16 do
 		other[i] = self[i]
@@ -212,6 +281,7 @@ function matrix:copyTo(other)
 	return other
 end
 
+-- Reads 'other's components into this matrix
 function matrix:copyFrom(other)
 	for i = 1, 16 do
 		self[i] = other[i]
@@ -219,12 +289,64 @@ function matrix:copyFrom(other)
 	return self
 end
 
+-- Constructs and returns a new matrix that is identical to this one
 function matrix:duplicate()
 	local new = matrix.new()
 	for i = 1, 16 do
 		new[i] = self[i]
 	end
 	return new
+end
+
+----------------------------------------------------------------
+--- Camera functions -------------------------------------------
+----------------------------------------------------------------
+--- Taken from the g3d library by groverburger               ---
+----------------------------------------------------------------
+
+-- returns a perspective projection matrix
+-- (things farther away appear smaller)
+-- all arguments are scalars aka normal numbers
+-- aspectRatio is defined as window width divided by window height
+function matrix:setProjectionMatrix(fov, near, far, aspectRatio)
+    local top = near * math.tan(fov/2)
+    local bottom = -1*top
+    local right = top * aspectRatio
+    local left = -1*right
+
+    self[1],  self[2],  self[3],  self[4]  = 2*near/(right-left), 0, (right+left)/(right-left), 0
+    self[5],  self[6],  self[7],  self[8]  = 0, 2*near/(top-bottom), (top+bottom)/(top-bottom), 0
+    self[9],  self[10], self[11], self[12] = 0, 0, -1*(far+near)/(far-near), -2*far*near/(far-near)
+    self[13], self[14], self[15], self[16] = 0, 0, -1, 0
+end
+
+-- returns an orthographic projection matrix
+-- (things farther away are the same size as things closer)
+-- all arguments are scalars aka normal numbers
+-- aspectRatio is defined as window width divided by window height
+function matrix:setOrthographicMatrix(fov, size, near, far, aspectRatio)
+    local top = size * math.tan(fov/2)
+    local bottom = -1*top
+    local right = top * aspectRatio
+    local left = -1*right
+
+    self[1],  self[2],  self[3],  self[4]  = 2/(right-left), 0, 0, -1*(right+left)/(right-left)
+    self[5],  self[6],  self[7],  self[8]  = 0, 2/(top-bottom), 0, -1*(top+bottom)/(top-bottom)
+    self[9],  self[10], self[11], self[12] = 0, 0, -2/(far-near), -(far+near)/(far-near)
+    self[13], self[14], self[15], self[16] = 0, 0, 0, 1
+end
+
+-- returns a view matrix
+-- eye, target, and up are all 3d vectors
+function matrix:setViewMatrix(eye, target, up)
+    local z1, z2, z3 = normal(eye[1] - target[1], eye[2] - target[2], eye[3] - target[3], 1)
+    local x1, x2, x3 = cross(up[1], up[2], up[3], z1, z2, z3, 1)
+    local y1, y2, y3 = cross(z1, z2, z3, x1, x2, x3, 1)
+
+    self[1],  self[2],  self[3],  self[4]  = x1, x2, x3, -1*dot(x1, x2, x3, eye[1], eye[2], eye[3])
+    self[5],  self[6],  self[7],  self[8]  = y1, y2, y3, -1*dot(y1, y2, y3, eye[1], eye[2], eye[3])
+    self[9],  self[10], self[11], self[12] = z1, z2, z3, -1*dot(z1, z2, z3, eye[1], eye[2], eye[3])
+    self[13], self[14], self[15], self[16] = 0, 0, 0, 1
 end
 
 return matrix
