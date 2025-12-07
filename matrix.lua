@@ -272,6 +272,49 @@ function matrix:determinant()
 				-a23*a32*a41 - a21*a33*a42 - a22*a31*a43)
 end
 
+-- Linear interpolation from 'start' to 'goal'
+function matrix:lerp(start, goal, t)
+	local px1, py1, pz1 = matrix.getPosition(start)
+	local px2, py2, pz2 = matrix.getPosition(goal)
+	local px, py, pz =
+		px1 + (px2 - px1) * t,
+		py1 + (py2 - py1) * t,
+		pz1 + (pz2 - pz1) * t
+
+	local sx1, sy1, sz1 = matrix.getScale(start)
+	local sx2, sy2, sz2 = matrix.getScale(goal)
+	local sx, sy, sz =
+		sx1 + (sx2 - sx1) * t,
+		sy1 + (sy2 - sy1) * t,
+		sz1 + (sz2 - sz1) * t
+
+	local fx1, fy1, fz1 = matrix.getForward(start)
+	local fx2, fy2, fz2 = matrix.getForward(goal)
+	local fx, fy, fz =
+		fx1 + (fx2 - fx1) * t,
+		fy1 + (fy2 - fy1) * t,
+		fz1 + (fz2 - fz1) * t
+
+	local ux1, uy1, uz1 = matrix.getUp(start)
+	local ux2, uy2, uz2 = matrix.getUp(goal)
+	local ux, uy, uz =
+		ux1 + (ux2 - ux1) * t,
+		uy1 + (uy2 - uy1) * t,
+		uz1 + (uz2 - uz1) * t
+
+	--return matrix:reset():position(px, py, pz):target(fx, fy, fz, ux, uy, uz):scale(sx, sy, sz)
+	return matrix.scale(matrix.target(matrix.position(
+				matrix.reset(self),
+				px, py, pz
+			),
+			px + fx, py + fy, pz + fz,
+			ux, uy, uz
+		),
+		sx, sy, sz
+	)
+
+end
+
 -- Copy this matrix's components to 'other'
 -- Returns the matrix being copied to
 function matrix:copyTo(other)
@@ -283,19 +326,12 @@ end
 
 -- Reads 'other's components into this matrix
 function matrix:copyFrom(other)
-	for i = 1, 16 do
-		self[i] = other[i]
-	end
-	return self
+	return matrix.copyTo(other, self)
 end
 
 -- Constructs and returns a new matrix that is identical to this one
 function matrix:duplicate()
-	local new = matrix.new()
-	for i = 1, 16 do
-		new[i] = self[i]
-	end
-	return new
+	return matrix.copyTo(self, matrix.new())
 end
 
 ----------------------------------------------------------------
